@@ -1,0 +1,242 @@
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--font-sans); }
+.container { padding: 1.5rem 0; max-width: 680px; }
+.phase-indicator { display: flex; gap: 6px; margin-bottom: 1.5rem; align-items: center; }
+.phase-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-border-tertiary); transition: background 0.3s; }
+.phase-dot.active { background: var(--color-text-secondary); }
+.phase-dot.done { background: var(--color-text-tertiary); }
+.phase-label { font-size: 12px; color: var(--color-text-tertiary); margin-left: 6px; letter-spacing: 0.05em; text-transform: uppercase; }
+.card { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); padding: 1.25rem 1.5rem; margin-bottom: 1rem; }
+.question { font-size: 16px; color: var(--color-text-primary); line-height: 1.7; margin-bottom: 1rem; }
+.complement { font-size: 13px; color: var(--color-text-secondary); line-height: 1.6; border-left: 2px solid var(--color-border-secondary); padding-left: 12px; margin-bottom: 1rem; }
+.history { margin-bottom: 1.5rem; }
+.history-item { padding: 10px 0; border-bottom: 0.5px solid var(--color-border-tertiary); }
+.history-item:last-child { border-bottom: none; }
+.history-q { font-size: 12px; color: var(--color-text-tertiary); margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.04em; }
+.history-a { font-size: 14px; color: var(--color-text-secondary); line-height: 1.5; }
+.input-row { display: flex; gap: 8px; margin-top: 0.75rem; }
+.input-row textarea { flex: 1; min-height: 80px; resize: vertical; font-size: 14px; padding: 10px 12px; border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-secondary); background: var(--color-background-secondary); color: var(--color-text-primary); font-family: var(--font-sans); line-height: 1.5; }
+.input-row textarea:focus { outline: none; border-color: var(--color-border-primary); }
+.btn { padding: 8px 16px; border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-secondary); background: transparent; color: var(--color-text-primary); font-size: 14px; cursor: pointer; white-space: nowrap; align-self: flex-end; transition: background 0.15s; }
+.btn:hover { background: var(--color-background-secondary); }
+.btn:active { transform: scale(0.98); }
+.btn-primary { background: var(--color-text-primary); color: var(--color-background-primary); border-color: var(--color-text-primary); }
+.btn-primary:hover { opacity: 0.85; }
+.quick-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 0.5rem; }
+.quick-btn { font-size: 12px; padding: 5px 10px; border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-tertiary); background: var(--color-background-secondary); color: var(--color-text-secondary); cursor: pointer; transition: all 0.15s; }
+.quick-btn:hover { border-color: var(--color-border-secondary); color: var(--color-text-primary); }
+.event-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 3px 10px; border-radius: 99px; background: var(--color-background-secondary); color: var(--color-text-secondary); border: 0.5px solid var(--color-border-tertiary); margin-bottom: 0.75rem; }
+.relief-banner { background: var(--color-background-success); border: 0.5px solid var(--color-border-success); border-radius: var(--border-radius-lg); padding: 1rem 1.25rem; margin-bottom: 1rem; color: var(--color-text-success); font-size: 14px; line-height: 1.6; }
+.nav-row { display: flex; gap: 8px; margin-top: 0.5rem; flex-wrap: wrap; }
+.step-badge { font-size: 11px; color: var(--color-text-tertiary); background: var(--color-background-secondary); padding: 2px 8px; border-radius: 99px; border: 0.5px solid var(--color-border-tertiary); }
+</style>
+
+<div class="container">
+<h2 class="sr-only">Protocole de remontée des mémoires collectives — outil interactif</h2>
+
+<div class="phase-indicator" id="phaseInd">
+  <div class="phase-dot active" id="d0"></div>
+  <div class="phase-dot" id="d1"></div>
+  <div class="phase-dot" id="d2"></div>
+  <div class="phase-dot" id="d3"></div>
+  <div class="phase-dot" id="d4"></div>
+  <div class="phase-dot" id="d5"></div>
+  <span class="phase-label" id="phaseLabel">Initialisation</span>
+</div>
+
+<div id="mainCard" class="card"></div>
+<div id="historyDiv" class="history" style="display:none"></div>
+<div id="navDiv"></div>
+</div>
+
+<script>
+const PHASES = [
+  { key:'group', label:'Groupe', dot:0 },
+  { key:'event', label:'Événement', dot:1 },
+  { key:'detail', label:'Détail', dot:2 },
+  { key:'witnesses', label:'Témoins', dot:3 },
+  { key:'justif', label:'Justifications', dot:4 },
+  { key:'prior', label:'Antérieur', dot:5 },
+];
+
+const state = {
+  phase: 'intro',
+  group: '',
+  events: [],
+  currentEvent: { when:'', what:'', witnesses:[], justifs:[], otherGroups:[] },
+  history: [],
+  dotIndex: 0,
+};
+
+function updateDots(idx) {
+  for(let i=0;i<6;i++){
+    const d=document.getElementById('d'+i);
+    d.className='phase-dot'+(i<idx?' done':i===idx?' active':'');
+  }
+  if(idx<PHASES.length) document.getElementById('phaseLabel').textContent=PHASES[idx].label;
+}
+
+function addHistory(q,a){ state.history.push({q,a}); }
+
+function renderHistory(){
+  const h=document.getElementById('historyDiv');
+  if(state.history.length===0){h.style.display='none';return;}
+  h.style.display='block';
+  h.innerHTML=state.history.map(item=>`<div class="history-item"><div class="history-q">${item.q}</div><div class="history-a">${item.a}</div></div>`).join('');
+}
+
+function inputBlock(placeholder, onSubmit, quickReplies=[], skipLabel=''){
+  let html=`<div class="input-row"><textarea placeholder="${placeholder}" id="mainInput"></textarea><button class="btn btn-primary" onclick="handleSubmit()">Continuer →</button></div>`;
+  if(quickReplies.length){
+    html+=`<div class="quick-btns">${quickReplies.map(r=>`<button class="quick-btn" onclick="quickFill('${r}')">${r}</button>`).join('')}</div>`;
+  }
+  if(skipLabel){
+    html+=`<div style="margin-top:8px"><button class="btn" onclick="handleSkip()">${skipLabel}</button></div>`;
+  }
+  document.getElementById('navDiv').innerHTML=html;
+  window.handleSubmit=()=>{ const v=document.getElementById('mainInput').value.trim(); if(v) onSubmit(v); };
+  window.handleSkip=()=>onSubmit('__skip__');
+  window.quickFill=(t)=>{ document.getElementById('mainInput').value=t; };
+}
+
+function btnBlock(buttons){
+  document.getElementById('navDiv').innerHTML=`<div class="nav-row">${buttons.map(b=>`<button class="btn ${b.primary?'btn-primary':''}" onclick="${b.fn}()">${b.label}</button>`).join('')}</div>`;
+}
+
+function render(){
+  const card=document.getElementById('mainCard');
+  const p=state.phase;
+
+  if(p==='intro'){
+    updateDots(0);
+    card.innerHTML=`<p class="question">Ce protocole vous accompagne pour explorer, sans accusation et sans culpabilité personnelle, les événements fondateurs qui ont façonné la mémoire collective de votre groupe.</p><p class="complement">Nous remonterons les événements un par un — du plus récent vers le plus ancien — en examinant les faits, les témoins, et les justifications qui ont suivi. Prenez le temps qu'il vous faut.</p>`;
+    inputBlock('À quel groupe appartenez-vous ? (ex : chrétien, juif, musulman sunnite, rwandais hutu…)', (v)=>{
+      state.group=v;
+      addHistory('Votre groupe','→ '+v);
+      state.phase='event_recent';
+      state.dotIndex=1;
+      render();
+    }, ['Chrétien catholique','Juif','Musulman sunnite','Musulman chiite']);
+
+  } else if(p==='event_recent'){
+    updateDots(1);
+    card.innerHTML=`<p class="question">Quel est l'événement le plus récent, dans la relation entre <strong>${state.group}</strong> et un autre groupe, qui vous laisse un sentiment de malaise, d'injustice ou de tension non résolue ?</p><p class="complement">Il n'y a pas de bonne ou mauvaise réponse. Nommez simplement ce qui vient spontanément.</p>`;
+    inputBlock('Décrivez l\'événement en quelques mots…', (v)=>{
+      state.currentEvent={ when:'', what:v, witnesses:[], justifs:[], otherGroups:[] };
+      addHistory('Événement','→ '+v);
+      state.phase='when';
+      state.dotIndex=1;
+      render();
+    });
+
+  } else if(p==='when'){
+    updateDots(1);
+    card.innerHTML=`<div class="event-tag"><i class="ti ti-calendar" aria-hidden="true" style="font-size:13px"></i>${state.currentEvent.what.substring(0,40)}${state.currentEvent.what.length>40?'…':''}</div><p class="question">Quand cela s'est-il produit ?</p>`;
+    inputBlock('Date ou période approximative…', (v)=>{
+      state.currentEvent.when=v;
+      addHistory('Quand','→ '+v);
+      state.phase='what_detail';
+      state.dotIndex=2;
+      render();
+    }, ['Récemment (2000–aujourd\'hui)','XXe siècle','Époque médiévale','Origines (VIIe siècle et avant)']);
+
+  } else if(p==='what_detail'){
+    updateDots(2);
+    card.innerHTML=`<div class="event-tag"><i class="ti ti-clock" aria-hidden="true" style="font-size:13px"></i>${state.currentEvent.when}</div><p class="question">Qu'est-ce qui s'est exactement passé ? Quels groupes ou personnes étaient impliqués, et qui a pris les décisions ?</p><p class="complement">L'IA peut compléter les faits historiques si vous le souhaitez — exprimez d'abord ce que vous savez.</p>`;
+    inputBlock('Décrivez les faits tels que vous les connaissez…', (v)=>{
+      addHistory('Ce qui s\'est passé','→ '+v.substring(0,120)+(v.length>120?'…':''));
+      state.phase='witnesses';
+      state.dotIndex=3;
+      render();
+    }, [], 'Je ne connais pas bien les faits → compléter');
+    window.handleSkip=()=>{
+      sendPrompt(`Dans le cadre du protocole de mémoire collective, l'utilisateur (groupe : ${state.group}) explore l'événement "${state.currentEvent.what}" (${state.currentEvent.when}). Il demande un complément historique factuel sur cet événement : qui étaient les acteurs, quels groupes, quelle décision, quelle conséquence immédiate. Répondre de façon sobre et factuelle, sans accusation.`);
+    };
+
+  } else if(p==='witnesses'){
+    updateDots(3);
+    card.innerHTML=`<p class="question">Qui étaient les témoins ou observateurs de cet événement — les personnes ou groupes dont le regard a pu susciter un sentiment de malaise ou de rejet chez les auteurs des faits ?</p><p class="complement">Ce sont souvent ceux dont la simple présence rappelait l'erreur commise.</p>`;
+    inputBlock('Nommez ces groupes ou personnes…', (v)=>{
+      state.currentEvent.witnesses.push(v);
+      addHistory('Témoins gênants','→ '+v);
+      state.phase='justif';
+      state.dotIndex=4;
+      render();
+    }, [], 'Pas de témoins identifiés');
+
+  } else if(p==='justif'){
+    updateDots(4);
+    card.innerHTML=`<p class="question">Quelles justifications ont été avancées pour cet événement — qu'elles soient sincères, partielles, ou après coup ?</p><p class="complement">Toute justification avait une part de vérité <em>pour ceux qui la formulaient</em>. Il ne s'agit pas de les condamner, mais de les nommer.</p>`;
+    inputBlock('Exprimez les justifications que vous connaissez…', (v)=>{
+      state.currentEvent.justifs.push(v);
+      addHistory('Justifications','→ '+v.substring(0,100)+(v.length>100?'…':''));
+      state.phase='other_groups';
+      render();
+    }, [], 'Je ne sais pas → laisser l\'IA compléter');
+    window.handleSkip=()=>{
+      sendPrompt(`Dans le cadre du protocole de mémoire collective, l'utilisateur (groupe : ${state.group}) a exploré l'événement "${state.currentEvent.what}". Il demande les principales justifications historiques avancées par le groupe auteur. Répondre de façon factuelle, sans jugement moral, en distinguant justifications sincères et prétextes rétrospectifs si possible.`);
+    };
+
+  } else if(p==='other_groups'){
+    updateDots(4);
+    card.innerHTML=`<p class="question">Y a-t-il d'autres groupes ou personnes qui suscitent une réaction de rejet ou de tension similaire, liée à cet événement ou à d'autres ?</p>`;
+    inputBlock('Nommez-les si vous en voyez…', (v)=>{
+      if(v!=='__skip__'){ state.currentEvent.otherGroups.push(v); addHistory('Autres groupes','→ '+v); }
+      state.phase='relief_check';
+      render();
+    }, [], 'Aucun autre → passer');
+
+  } else if(p==='relief_check'){
+    updateDots(5);
+    card.innerHTML=`<p class="question">En ayant parcouru cet événement — les faits, les témoins, les justifications — ressentez-vous un certain soulagement, une légèreté ?</p>`;
+    btnBlock([
+      {label:'Oui, je me sens plus léger', fn:'handleRelief', primary:true},
+      {label:'Partiellement', fn:'handlePartial'},
+      {label:'Non, pas encore', fn:'handleNoRelief'},
+    ]);
+    window.handleRelief=()=>{ state.phase='relief'; render(); };
+    window.handlePartial=()=>{ state.phase='prior'; render(); };
+    window.handleNoRelief=()=>{ state.phase='prior'; render(); };
+
+  } else if(p==='relief'){
+    updateDots(5);
+    card.innerHTML=`<div class="relief-banner"><i class="ti ti-check" aria-hidden="true"></i> Ce sujet semble apaisé. Nous pouvons y revenir à tout moment si vous le souhaitez.</div><p class="question">Souhaitez-vous explorer un événement antérieur — plus ancien, plus profond dans la mémoire de votre groupe ?</p>`;
+    btnBlock([
+      {label:'Oui, remonter plus loin', fn:'handlePrior', primary:true},
+      {label:'Non, c\'est suffisant pour aujourd\'hui', fn:'handleEnd'},
+    ]);
+    window.handlePrior=()=>{ state.phase='prior'; render(); };
+    window.handleEnd=()=>{ state.phase='end'; render(); };
+
+  } else if(p==='prior'){
+    updateDots(5);
+    state.events.push({...state.currentEvent});
+    card.innerHTML=`<p class="question">Quel événement antérieur — plus ancien dans l'histoire de votre groupe — pourrait être lié à ces tensions ?</p><p class="complement">Si rien ne vient spontanément, l'IA peut vous proposer des événements historiques pertinents pour votre groupe.</p>`;
+    inputBlock('Nommez un événement antérieur…', (v)=>{
+      if(v==='__skip__'){
+        sendPrompt(`Dans le cadre du protocole de mémoire collective, l'utilisateur (groupe : ${state.group}) a exploré ces événements : ${state.events.map(e=>e.what).join(', ')}. Proposez 2 ou 3 événements historiques antérieurs pertinents pour ce groupe, liés aux mêmes tensions, en les datant et les décrivant sobrement en 2-3 lignes chacun.`);
+        return;
+      }
+      state.currentEvent={ when:'', what:v, witnesses:[], justifs:[], otherGroups:[] };
+      addHistory('Événement antérieur','→ '+v);
+      state.phase='when';
+      state.dotIndex=1;
+      renderHistory();
+      render();
+    }, [], 'Aucune idée → me suggérer des événements');
+
+  } else if(p==='end'){
+    updateDots(5);
+    card.innerHTML=`<div class="relief-banner"><i class="ti ti-check" aria-hidden="true"></i> Merci pour ce parcours. Les événements explorés aujourd'hui resteront disponibles pour une prochaine session.</div><p class="question" style="margin-top:1rem">Lors d'une prochaine session, vous pourrez vérifier si la perception des groupes antagonistes a évolué, et reprendre l'exploration là où elle s'est arrêtée.</p>`;
+    btnBlock([
+      {label:'Recommencer un nouveau parcours ↗', fn:'handleRestart', primary:true},
+    ]);
+    window.handleRestart=()=>{ sendPrompt('Je voudrais commencer un nouveau parcours de mémoire collective.'); };
+  }
+
+  renderHistory();
+}
+
+render();
+</script>
